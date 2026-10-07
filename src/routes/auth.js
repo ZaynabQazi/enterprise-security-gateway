@@ -57,7 +57,7 @@ router.post('/register', registerLimiter, async (req, res, next) => {
       // Role is NEVER taken from the request body: self-registration is always Employee.
       user = await User.create({ name: name.trim(), email: normalized, passwordHash, role: 'Employee', isLocal: true });
     } catch (err) {
-      if (err.code === 'ER_DUP_ENTRY') return res.status(409).json({ error: 'An account with this email already exists' });
+      if (err.code === 'ER_DUP_ENTRY' || err.code === 'SQLITE_CONSTRAINT_UNIQUE') return res.status(409).json({ error: 'An account with this email already exists' });
       throw err;
     }
 

@@ -76,7 +76,7 @@ app.use((err, req, res, next) => {
 
 async function start() {
   await db.init();
-  console.log(`MySQL connected (database: ${env.db.name})`);
+  console.log(env.db.client === 'sqlite' ? `SQLite ready (${env.db.sqlitePath})` : `MySQL connected (database: ${env.db.name})`);
   if (env.seedOnStart) await seedDemoUsers();
   // Clean up expired refresh tokens now and then hourly
   await RefreshToken.purgeExpired();

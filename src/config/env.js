@@ -23,6 +23,9 @@ module.exports = {
   port,
   appUrl,
   db: {
+    // 'mysql' (default, XAMPP) or 'sqlite' (single file, no database server needed)
+    client: (process.env.DB_CLIENT || 'mysql').toLowerCase(),
+    sqlitePath: process.env.SQLITE_PATH || require('path').join(__dirname, '..', '..', 'data', 'gateway.sqlite'),
     host: process.env.DB_HOST || process.env.MYSQLHOST || '127.0.0.1',
     port: Number(process.env.DB_PORT || process.env.MYSQLPORT) || 3306,
     user: process.env.DB_USER || process.env.MYSQLUSER || 'root',

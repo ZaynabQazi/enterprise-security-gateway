@@ -2,10 +2,10 @@
 
 CSC337 Lab Assignment 05: Hybrid authentication (local bcrypt + Google/GitHub OAuth 2.0), access/refresh token rotation, Role-Based Access Control and OWASP hardening.
 
-**Stack:** Node.js, Express 4, MySQL / MariaDB (XAMPP locally), Passport.js, JWT, bcrypt, Helmet.
+**Stack:** Node.js, Express 4, MySQL / MariaDB (XAMPP locally) or SQLite (free cloud deploy), Passport.js, JWT, bcrypt, Helmet.
 
-- Live app: `https://YOUR-APP.up.railway.app`
-- API base URL: `https://YOUR-APP.up.railway.app/api/v1`
+- Live app: `https://YOUR-APP.onrender.com`
+- API base URL: `https://YOUR-APP.onrender.com/api/v1`
 
 ## Test credentials
 
@@ -40,7 +40,7 @@ These accounts are created automatically on startup when `SEED_ON_START=true` (o
 
 ## Database
 
-MySQL/MariaDB with two tables, created automatically on first start (no SQL import needed):
+Two tables, created automatically on first start (no SQL import needed). Locally the app uses MySQL/MariaDB from XAMPP; set `DB_CLIENT=sqlite` to use a single SQLite file instead (used for the free Render deployment):
 
 - `users` (id, name, email, password_hash, role, tenant_id, google_id, github_id, avatar, failed_login_attempts, lock_until, timestamps)
 - `refresh_tokens` (jti, user_id, family, revoked, expires_at), linked to users with `ON DELETE CASCADE`
@@ -85,26 +85,32 @@ See `.env.example`. Required: `ACCESS_TOKEN_SECRET`, `REFRESH_TOKEN_SECRET`. Dat
 
 ## Set up OAuth
 
-**GitHub:** GitHub, Settings, Developer settings, OAuth Apps, New OAuth App. Callback URL: `https://YOUR-APP.up.railway.app/api/v1/auth/github/callback` (create a second app with `http://localhost:5000/api/v1/auth/github/callback` for local testing). Copy into `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET`.
+**GitHub:** GitHub, Settings, Developer settings, OAuth Apps, New OAuth App. Callback URL: `https://YOUR-APP.onrender.com/api/v1/auth/github/callback` (create a second app with `http://localhost:5000/api/v1/auth/github/callback` for local testing). Copy into `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET`.
 
-**Google:** Google Cloud Console, APIs and Services, Credentials, OAuth client ID (Web application). Authorized redirect URI: `https://YOUR-APP.up.railway.app/api/v1/auth/google/callback`. Copy into `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`.
+**Google:** Google Cloud Console, APIs and Services, Credentials, OAuth client ID (Web application). Authorized redirect URI: `https://YOUR-APP.onrender.com/api/v1/auth/google/callback`. Copy into `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`.
 
-## Deploy on Railway (app + MySQL)
+## Deploy on Render (free, SQLite mode)
 
-XAMPP's MySQL only exists on your laptop, so the live deployment needs a hosted MySQL. Railway provides both in one project.
+XAMPP's MySQL only exists on your laptop, so the live site uses SQLite, which needs no separate database server. Everything lives in one Render service.
 
 1. Push this repo to GitHub as a **public** repository.
-2. On railway.com: New Project, Deploy from GitHub repo, pick this repo.
-3. In the same project: New, Database, **Add MySQL**.
-4. Open the app service, Variables, and add:
+2. On render.com: New +, Web Service, connect the repo.
+   - Build command: `npm install`
+   - Start command: `npm start`
+   - Instance type: **Free**
+3. Add environment variables:
    - `NODE_ENV=production`
-   - `ACCESS_TOKEN_SECRET`, `REFRESH_TOKEN_SECRET` (new random values)
+   - `DB_CLIENT=sqlite`
    - `SEED_ON_START=true`
-   - `MYSQLHOST=${{MySQL.MYSQLHOST}}`, `MYSQLPORT=${{MySQL.MYSQLPORT}}`, `MYSQLUSER=${{MySQL.MYSQLUSER}}`, `MYSQLPASSWORD=${{MySQL.MYSQLPASSWORD}}`, `MYSQLDATABASE=${{MySQL.MYSQLDATABASE}}`
-5. Settings, Networking, **Generate Domain**. Then add `APP_URL=https://<that-domain>` and `CORS_ORIGINS=https://<that-domain>` and redeploy.
-6. Open the URL and log in with the test accounts.
+   - `ACCESS_TOKEN_SECRET`, `REFRESH_TOKEN_SECRET` (new random values)
+4. Create the service. Once it has a URL, add `APP_URL=https://YOUR-APP.onrender.com` and `CORS_ORIGINS=https://YOUR-APP.onrender.com`. Render redeploys automatically.
+5. Open the URL and log in with the test accounts.
 
-Start command is `npm start` (Railway detects it). Do not set `COOKIE_SECURE` in production.
+Do not set `COOKIE_SECURE` in production.
+
+**Free-tier notes:**
+- Render's free instances have no persistent disk and sleep after 15 minutes of no traffic. When the service restarts, the SQLite file resets: the three demo accounts are recreated automatically (`SEED_ON_START=true`), but accounts registered through the app and active sessions are lost. Open the URL a few minutes before the viva and log in fresh.
+- For permanent data, use a hosted MySQL instead: set `DB_CLIENT=mysql`, `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME` and `DB_SSL=true` (for example with a free TiDB Cloud instance).
 
 ## Viva cheat sheet (Postman)
 
@@ -113,7 +119,7 @@ Start command is `npm start` (Railway detects it). Do not set `COOKIE_SECURE` in
 3. **RBAC rejection:** login as Employee, call `POST /payroll/approve` or `DELETE /users/:id` and get **403**. Login as SuperAdmin and the same calls succeed.
 4. **OAuth:** click "Continue with Google/GitHub" on the home page. You land back signed in with role Employee.
 
-**If you get locked out while testing:** restart the server (this clears the IP rate limit) and run this in phpMyAdmin (SQL tab) or the MySQL console to clear account locks:
+**If you get locked out while testing:** restart the server (this clears the IP rate limit). On XAMPP also run this in phpMyAdmin (SQL tab) to clear account locks (on Render with SQLite, a restart resets everything):
 ```sql
 UPDATE security_gateway.users SET failed_login_attempts = 0, lock_until = NULL;
 ```

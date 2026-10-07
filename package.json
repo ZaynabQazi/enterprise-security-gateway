@@ -26,5 +26,8 @@
     "passport-github2": "^0.1.12",
     "passport-google-oauth20": "^2.0.0",
     "xss": "^1.0.15"
+  },
+  "optionalDependencies": {
+    "better-sqlite3": "^12.0.0"
   }
 }

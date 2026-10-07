@@ -1,9 +1,15 @@
-const mysql = require('mysql2/promise');
+const fs = require('fs');
+const path = require('path');
 const env = require('./env');
 
-let pool;
+const useSqlite = env.db.client === 'sqlite';
 
-const USERS_TABLE = `
+let pool; // mysql2 pool
+let sqlite; // better-sqlite3 handle
+
+// ---------------- MySQL / MariaDB (XAMPP) ----------------
+
+const MYSQL_USERS = `
 CREATE TABLE IF NOT EXISTS users (
   id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
   name VARCHAR(80) NOT NULL,
@@ -26,7 +32,7 @@ CREATE TABLE IF NOT EXISTS users (
 
 // One row per issued refresh token. `family` ties together every token descended from a
 // single login, so a reused (stolen) token can revoke the whole chain.
-const REFRESH_TABLE = `
+const MYSQL_REFRESH = `
 CREATE TABLE IF NOT EXISTS refresh_tokens (
   id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
   jti CHAR(36) NOT NULL UNIQUE,
@@ -41,7 +47,7 @@ CREATE TABLE IF NOT EXISTS refresh_tokens (
   CONSTRAINT fk_rt_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`;
 
-const base = () => ({
+const mysqlBase = () => ({
   host: env.db.host,
   port: env.db.port,
   user: env.db.user,
@@ -50,10 +56,10 @@ const base = () => ({
   timezone: 'Z', // store and read all dates as UTC
 });
 
-// Creates the database (if allowed) and tables, then opens the connection pool.
-async function init() {
+async function initMysql() {
+  const mysql = require('mysql2/promise');
   try {
-    const conn = await mysql.createConnection(base());
+    const conn = await mysql.createConnection(mysqlBase());
     await conn.query(`CREATE DATABASE IF NOT EXISTS \`${env.db.name}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
     await conn.end();
   } catch (err) {
@@ -62,18 +68,84 @@ async function init() {
   }
 
   pool = mysql.createPool({
-    ...base(),
+    ...mysqlBase(),
     database: env.db.name,
     waitForConnections: true,
     connectionLimit: 10,
   });
 
-  await pool.query(USERS_TABLE);
-  await pool.query(REFRESH_TABLE);
+  await pool.query(MYSQL_USERS);
+  await pool.query(MYSQL_REFRESH);
+}
+
+// ---------------- SQLite (no separate database server needed) ----------------
+
+const SQLITE_SCHEMA = `
+CREATE TABLE IF NOT EXISTS users (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  email TEXT NOT NULL UNIQUE,
+  password_hash TEXT,
+  role TEXT NOT NULL DEFAULT 'Employee' CHECK (role IN ('SuperAdmin','Manager','Employee')),
+  tenant_id TEXT NOT NULL DEFAULT 'default',
+  is_local INTEGER NOT NULL DEFAULT 0,
+  google_id TEXT,
+  github_id TEXT,
+  avatar TEXT,
+  failed_login_attempts INTEGER NOT NULL DEFAULT 0,
+  lock_until TEXT,
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+CREATE INDEX IF NOT EXISTS idx_users_tenant ON users (tenant_id);
+CREATE INDEX IF NOT EXISTS idx_users_google ON users (google_id);
+CREATE INDEX IF NOT EXISTS idx_users_github ON users (github_id);
+
+CREATE TABLE IF NOT EXISTS refresh_tokens (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  jti TEXT NOT NULL UNIQUE,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  family TEXT NOT NULL,
+  revoked INTEGER NOT NULL DEFAULT 0,
+  expires_at TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+CREATE INDEX IF NOT EXISTS idx_rt_family ON refresh_tokens (family);
+CREATE INDEX IF NOT EXISTS idx_rt_user ON refresh_tokens (user_id);
+CREATE INDEX IF NOT EXISTS idx_rt_expires ON refresh_tokens (expires_at);
+`;
+
+function initSqlite() {
+  let Database;
+  try {
+    Database = require('better-sqlite3');
+  } catch {
+    throw new Error('DB_CLIENT=sqlite needs the better-sqlite3 package. Run: npm install better-sqlite3');
+  }
+  fs.mkdirSync(path.dirname(env.db.sqlitePath), { recursive: true });
+  sqlite = new Database(env.db.sqlitePath);
+  sqlite.pragma('journal_mode = WAL');
+  sqlite.pragma('foreign_keys = ON'); // needed for ON DELETE CASCADE
+  sqlite.exec(SQLITE_SCHEMA);
+}
+
+// ---------------- Shared API ----------------
+
+async function init() {
+  if (useSqlite) initSqlite();
+  else await initMysql();
 }
 
 // Parameterized query helper: values are always sent separately from the SQL text (SQL injection safe).
+// SELECT returns an array of rows; INSERT/UPDATE/DELETE return { insertId, affectedRows }.
 async function run(sql, params = []) {
+  if (useSqlite) {
+    const safe = params.map((p) => (p === undefined ? null : p instanceof Date ? p.toISOString() : p));
+    const stmt = sqlite.prepare(sql);
+    if (stmt.reader) return stmt.all(...safe);
+    const info = stmt.run(...safe);
+    return { insertId: Number(info.lastInsertRowid), affectedRows: info.changes };
+  }
   const safe = params.map((p) => (p === undefined ? null : p));
   const [result] = await pool.execute(sql, safe);
   return result;
@@ -81,6 +153,7 @@ async function run(sql, params = []) {
 
 async function close() {
   if (pool) await pool.end();
+  if (sqlite) sqlite.close();
 }
 
 module.exports = { init, run, close };

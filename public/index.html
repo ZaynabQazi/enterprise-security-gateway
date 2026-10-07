@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Security Gateway</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <header>
+    <h1>Enterprise Security Gateway</h1>
+    <p>Hybrid auth (bcrypt + OAuth 2.0), refresh token rotation and RBAC demo console</p>
+  </header>
+
+  <main>
+    <section class="card" id="auth-card">
+      <h2>1. Sign in</h2>
+      <form id="login-form">
+        <input type="email" id="login-email" placeholder="Email" required autocomplete="username" />
+        <input type="password" id="login-password" placeholder="Password" required autocomplete="current-password" />
+        <button type="submit">Login</button>
+      </form>
+      <div class="oauth">
+        <a class="btn" id="google-btn" href="/api/v1/auth/google">Continue with Google</a>
+        <a class="btn" id="github-btn" href="/api/v1/auth/github">Continue with GitHub</a>
+      </div>
+      <details>
+        <summary>Register a new Employee account</summary>
+        <form id="register-form">
+          <input type="text" id="reg-name" placeholder="Full name" required />
+          <input type="email" id="reg-email" placeholder="Email" required />
+          <input type="password" id="reg-password" placeholder="Password (8+ chars, Aa1)" required autocomplete="new-password" />
+          <button type="submit">Register</button>
+        </form>
+      </details>
+    </section>
+
+    <section class="card">
+      <h2>2. Session</h2>
+      <p id="session-status">Not signed in.</p>
+      <div class="row">
+        <button id="refresh-btn">Rotate refresh token</button>
+        <button id="logout-btn" class="danger">Logout</button>
+      </div>
+      <label>Access token (kept in memory only, 15 min)</label>
+      <textarea id="token-box" readonly rows="4" placeholder="No access token"></textarea>
+    </section>
+
+    <section class="card">
+      <h2>3. RBAC test calls</h2>
+      <div class="row">
+        <button data-call="profile">GET /employee/profile</button>
+        <button data-call="approve">POST /payroll/approve</button>
+        <button data-call="users">GET /users</button>
+        <button data-call="delete" class="danger">DELETE /users/:id</button>
+      </div>
+      <input type="text" id="target-id" placeholder="User id (for approve / delete)" />
+    </section>
+
+    <section class="card">
+      <h2>Response</h2>
+      <pre id="output">Responses appear here.</pre>
+    </section>
+  </main>
+
+  <script src="/app.js"></script>
+</body>
+</html>
